@@ -20,6 +20,5 @@ docker compose up -d
 ```
 
 The links can be found in the `players/links.txt` file.
-They can be
 
 
