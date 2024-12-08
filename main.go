@@ -2,19 +2,37 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand/v2"
 	"net/http"
 	"os"
 	"secret-santa/file"
 	"strings"
+	"text/template"
 
 	"github.com/gosimple/slug"
 )
 
-type Players map[string]string
+type Players map[string]map[string]string
+type Player struct {
+	Slug   string
+	Name   string
+	Token  string
+	Friend string
+}
+
+const (
+	playersFile  = "players/players.txt"
+	friendsFile  = "friends.json"
+	templateFile = "templates/template.html"
+	linksFile    = "players/links.txt"
+)
 
 func main() {
+
+	// Command-line arguments for the initial generation of player-friend pairs
+	// Usage: go run main.go shuffle
 	if len(os.Args) >= 2 {
 		command := os.Args[1]
 		if command == "shuffle" {
@@ -22,73 +40,104 @@ func main() {
 			os.Exit(0)
 		}
 		if command == "show" {
-			getPlayers()
+			players := getPlayers()
+			fmt.Println(players)
 			os.Exit(0)
 		}
 		log.Fatalln("Please specify a command: shuffle or show")
 	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		log.Fatalln("Please set the PORT environment variable")
-	}
+	generateLinks()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{player}", playerHandler)
 
-	err := http.ListenAndServe(":"+port, mux)
+	err := http.ListenAndServe(":3000", mux)
 	if err != nil {
 		log.Fatalln("Error starting server:", err)
 	}
 }
 
+// playerHandler handles GET requests to /{player}.
+// It displays the player's secret friend.
 func playerHandler(w http.ResponseWriter, req *http.Request) {
-	player := req.PathValue("player")
+	slug := req.PathValue("player")
 
 	players := getPlayers()
-	secret, ok := players[player]
-	if !ok {
-		log.Println("Player not found:", player)
+	player := parsePlayer(players, slug)
+	query := req.URL.Query()
+	token := query.Get("token")
+	if token != player.Token {
+		log.Println("Wrong token")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
 	}
 
-	w.Write([]byte(secret))
+	tmpl := template.Must(template.ParseFiles(templateFile))
+	tmpl.Execute(w, player)
+}
+
+func parsePlayer(players Players, slug string) Player {
+	playerdict, ok := players[slug]
+	if !ok {
+		log.Println("Player not found:", slug)
+	}
+
+	return Player{
+		Slug:   slug,
+		Name:   playerdict["name"],
+		Token:  playerdict["token"],
+		Friend: playerdict["friend"],
+	}
 }
 
 func getPlayers() Players {
-	players := file.ReadFile("players.json")
+	players := file.ReadFile(friendsFile)
 
-	dict := map[string]string{}
+	dict := Players{}
 	err := json.Unmarshal([]byte(players), &dict)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	// for k, v := range dict {
-	// 	log.Printf("%s: %s\n", k, v)
-	// }
-
 	return dict
 }
 
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randomString(n int) string {
+
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.IntN(len(letters))]
+	}
+	return string(b)
+}
+
 func shufflePlayers() {
-	fileExists := file.FileExists("players.txt")
+	fileExists := file.FileExists(playersFile)
 	if !fileExists {
-		log.Fatalln("players.txt does not exist")
+		log.Fatalln(playersFile + " does not exist")
 	}
 
-	players := strings.Split(file.ReadFile("players.txt"), "\n")
+	players := strings.Split(file.ReadFile(playersFile), "\n")
 	players = players[:len(players)-1]
 
-	dict := map[string]string{}
+	dict := Players{}
 	for {
 		no_conflicts := true
 		shuffled_indexes := rand.Perm(len(players))
 		for i := 0; i < len(players); i++ {
 			if players[i] == players[shuffled_indexes[i]] {
 				no_conflicts = false
+				break
 			}
 			slug := slug.Make(players[i])
-			dict[slug] = players[shuffled_indexes[i]]
+			dict[slug] = map[string]string{}
+			dict[slug]["slug"] = slug
+			dict[slug]["name"] = players[i]
+			dict[slug]["token"] = randomString(10)
+			dict[slug]["friend"] = players[shuffled_indexes[i]]
 		}
 		if no_conflicts {
 			break
@@ -102,5 +151,17 @@ func shufflePlayers() {
 		log.Fatalln(err)
 	}
 
-	file.Create("players.json", string(json))
+	file.Create(friendsFile, string(json))
+}
+
+func generateLinks() {
+	dict := getPlayers()
+
+	links := ""
+	for k, v := range dict {
+		link := fmt.Sprintf("%s: https://amigosecreto.renangreca.com/%s?token=%s\n", v["name"], k, v["token"])
+		links = links + link
+	}
+
+	file.Create(linksFile, links)
 }

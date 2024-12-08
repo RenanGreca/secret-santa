@@ -1,0 +1,12 @@
+name: 'secret-santa'
+
+services:
+    secret-santa:
+        image: secret-santa
+        container_name: secret-santa
+        restart: always
+        ports:
+          - 6134:3000
+        volumes:
+          - ./players/:/app/players/
+          - ./templates/:/app/templates/
