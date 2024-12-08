@@ -156,10 +156,11 @@ func shufflePlayers() {
 
 func generateLinks() {
 	dict := getPlayers()
+	url := os.Getenv("SECRET_SANTA_URL")
 
 	links := ""
 	for k, v := range dict {
-		link := fmt.Sprintf("%s: https://amigosecreto.renangreca.com/%s?token=%s\n", v["name"], k, v["token"])
+		link := fmt.Sprintf("%s: %s/%s?token=%s\n", v["name"], url, k, v["token"])
 		links = links + link
 	}
 
