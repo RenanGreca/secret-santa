@@ -62,6 +62,7 @@ func main() {
 // It displays the player's secret friend.
 func playerHandler(w http.ResponseWriter, req *http.Request) {
 	slug := req.PathValue("player")
+	fmt.Println("Received request for player:", slug)
 
 	players := getPlayers()
 	player := parsePlayer(players, slug)
@@ -106,7 +107,6 @@ func getPlayers() Players {
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 func randomString(n int) string {
-
 	b := make([]rune, n)
 	for i := range b {
 		b[i] = letters[rand.IntN(len(letters))]
@@ -120,37 +120,33 @@ func shufflePlayers() {
 		log.Fatalln(playersFile + " does not exist")
 	}
 
+	// Read list of player from file
+	fmt.Println("Reading players from " + playersFile)
 	players := strings.Split(file.ReadFile(playersFile), "\n")
 	players = players[:len(players)-1]
+	shuffled_indexes := rand.Perm(len(players))
 
 	dict := Players{}
-	for {
-		no_conflicts := true
-		shuffled_indexes := rand.Perm(len(players))
-		for i := 0; i < len(players); i++ {
-			if players[i] == players[shuffled_indexes[i]] {
-				no_conflicts = false
-				break
-			}
-			slug := slug.Make(players[i])
-			dict[slug] = map[string]string{}
-			dict[slug]["slug"] = slug
-			dict[slug]["name"] = players[i]
-			dict[slug]["token"] = randomString(10)
-			dict[slug]["friend"] = players[shuffled_indexes[i]]
-		}
-		if no_conflicts {
-			break
-		}
-		log.Println("No conflicts:", no_conflicts)
+
+	for i := 0; i < len(players); i++ {
+		j := (i + 1) % len(players)
+		giver := players[shuffled_indexes[i]]
+		receiver := players[shuffled_indexes[j]]
+
+		slug := slug.Make(giver)
+		dict[slug] = map[string]string{}
+		dict[slug]["slug"] = slug
+		dict[slug]["name"] = giver
+		dict[slug]["token"] = randomString(10)
+		dict[slug]["friend"] = receiver
 	}
-	log.Println("Conflicts resolved!")
 
 	json, err := json.Marshal(dict)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
+	fmt.Println("Storing player-friend pairs in " + friendsFile)
 	file.Create(friendsFile, string(json))
 }
 
